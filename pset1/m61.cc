@@ -7,7 +7,7 @@
 #include <cassert>
 #include <iostream>
 
-static m61_statistics gstats = {0, 0, 0, 0, 0, 0, 0, 0};
+static m61_statistics gstats = {0, 0, 0, 0, 0, 0, UINTPTR_MAX, 0};
 
 /// m61_malloc(sz, file, line)
 ///    Return a pointer to `sz` bytes of newly-allocated dynamic memory.
@@ -20,10 +20,6 @@ void* m61_malloc(size_t sz, const char* file, long line) {
 
     // call malloc
     void* ret_ptr = base_malloc(sz);
-
-    // check if first allocation and set heap min
-    if(gstats.heap_min == 0) gstats.heap_min = (uintptr_t)ret_ptr;
-
     
     // std::cout << (int*)ret_ptr << std::endl;
     if (ret_ptr) // if not null pointer
