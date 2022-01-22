@@ -11,9 +11,11 @@
 
 static m61_statistics gstats = {0, 0, 0, 0, 0, 0, UINTPTR_MAX, 0};
 
-struct metadata { // TODO change struct size to be a multiple of 16bytes for alignment reasons
+struct metadata {
     unsigned long long payload_size;
-};
+}; // < header size
+
+const int header_size = 16; // bytes
 
 /// m61_malloc(sz, file, line)
 ///    Return a pointer to `sz` bytes of newly-allocated dynamic memory.
@@ -25,14 +27,14 @@ void* m61_malloc(size_t sz, const char* file, long line) {
     (void) file, (void) line;   // avoid uninitialized variable warnings
 
     // call malloc
-    unsigned long long total_sz = sizeof(metadata)*2 + sz; 
+    size_t total_sz = header_size + sz; 
     metadata* meta_ptr = (metadata*)base_malloc(total_sz);
     void* payload_ptr;
     
     //std::cout << (int*)meta_ptr << " " << (int*)payload_ptr << std::endl;
     if (meta_ptr) // if not null pointer
     {
-        payload_ptr = (void*)(meta_ptr + 2);
+        payload_ptr = (void*)((char*)meta_ptr + header_size);
 
         // write to m61 stats struct
         ++gstats.ntotal;
@@ -79,7 +81,7 @@ void m61_free(void* ptr, const char* file, long line) {
     (void) file, (void) line;   // avoid uninitialized variable warnings
     // get pointer to metadata
     if (!ptr) return;
-    metadata* meta =(metadata*)ptr-2;
+    metadata* meta =(metadata*)((char*)ptr - header_size);
     if (meta)
     {
         // modify m61 stats
