@@ -7,7 +7,13 @@
 #include <cassert>
 #include <iostream>
 
+
+
 static m61_statistics gstats = {0, 0, 0, 0, 0, 0, UINTPTR_MAX, 0};
+
+struct metadata { // TODO change struct size to be a multiple of 16bytes for alignment reasons
+    unsigned long long payload_size;
+};
 
 /// m61_malloc(sz, file, line)
 ///    Return a pointer to `sz` bytes of newly-allocated dynamic memory.
@@ -19,37 +25,48 @@ void* m61_malloc(size_t sz, const char* file, long line) {
     (void) file, (void) line;   // avoid uninitialized variable warnings
 
     // call malloc
-    void* ret_ptr = base_malloc(sz);
+    unsigned long long total_sz = sizeof(metadata)*2 + sz; 
+    metadata* meta_ptr = (metadata*)base_malloc(total_sz);
+    void* payload_ptr;
     
-    // std::cout << (int*)ret_ptr << std::endl;
-    if (ret_ptr) // if not null pointer
+    //std::cout << (int*)meta_ptr << " " << (int*)payload_ptr << std::endl;
+    if (meta_ptr) // if not null pointer
     {
+        payload_ptr = (void*)(meta_ptr + 2);
+
+        // write to m61 stats struct
         ++gstats.ntotal;
         ++gstats.nactive;
         gstats.total_size+=sz;
         gstats.active_size+=sz;
-
         // update min and max heap values
-        if((uintptr_t)ret_ptr < gstats.heap_min) gstats.heap_min = (uintptr_t)ret_ptr;
-        if((uintptr_t)ret_ptr + sz > gstats.heap_max) gstats.heap_max = (uintptr_t)ret_ptr + sz;
+        if((uintptr_t)meta_ptr < gstats.heap_min)
+            gstats.heap_min = (uintptr_t)meta_ptr;
+        if((uintptr_t)meta_ptr + total_sz > gstats.heap_max)
+            gstats.heap_max = (uintptr_t)meta_ptr + total_sz;
+
+        // write to pointer metadata
+        meta_ptr->payload_size = sz;
     }
     else
     {
+        payload_ptr = nullptr;
         gstats.nfail++;
         gstats.fail_size+=sz;
     }
 
 
-    // if ((uintptr_t)ret_ptr < gstats.heap_min)
+    // if ((uintptr_t)meta_ptr < gstats.heap_min)
     // {
-    //     gstats.heap_min = ret_ptr;
+    //     gstats.heap_min = meta_ptr;
     // }
-    // if ((uintptr_t)ret_ptr > gstats.heap_max)
+    // if ((uintptr_t)meta_ptr > gstats.heap_max)
     // {
-    //     gstats.heap_max = ret_ptr;
+    //     gstats.heap_max = meta_ptr;
     // }
 
-    return ret_ptr;
+    
+    return payload_ptr;
 }
 
 
@@ -60,12 +77,17 @@ void* m61_malloc(size_t sz, const char* file, long line) {
 
 void m61_free(void* ptr, const char* file, long line) {
     (void) file, (void) line;   // avoid uninitialized variable warnings
-    if (ptr)
+    // get pointer to metadata
+    if (!ptr) return;
+    metadata* meta =(metadata*)ptr-2;
+    if (meta)
     {
+        // modify m61 stats
         --gstats.nactive;
+        gstats.active_size -= meta->payload_size;
     }
     
-    base_free(ptr);
+    base_free(meta);
 }
 
 
