@@ -25,13 +25,17 @@ const int header_size = 16; // bytes
 
 void* m61_malloc(size_t sz, const char* file, long line) {
     (void) file, (void) line;   // avoid uninitialized variable warnings
-
-    // call malloc
-    size_t total_sz = header_size + sz; 
-    metadata* meta_ptr = (metadata*)base_malloc(total_sz);
-    void* payload_ptr;
     
-    //std::cout << (int*)meta_ptr << " " << (int*)payload_ptr << std::endl;
+    metadata* meta_ptr = nullptr;
+    void* payload_ptr;
+
+    size_t total_sz = header_size + sz;
+
+    // check for int overflow and malloc
+    if (total_sz >= sz){
+        meta_ptr = (metadata*)base_malloc(total_sz);
+    }
+    
     if (meta_ptr) // if not null pointer
     {
         payload_ptr = (void*)((char*)meta_ptr + header_size);
@@ -56,17 +60,6 @@ void* m61_malloc(size_t sz, const char* file, long line) {
         gstats.nfail++;
         gstats.fail_size+=sz;
     }
-
-
-    // if ((uintptr_t)meta_ptr < gstats.heap_min)
-    // {
-    //     gstats.heap_min = meta_ptr;
-    // }
-    // if ((uintptr_t)meta_ptr > gstats.heap_max)
-    // {
-    //     gstats.heap_max = meta_ptr;
-    // }
-
     
     return payload_ptr;
 }
