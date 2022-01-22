@@ -13,9 +13,12 @@ static m61_statistics gstats = {0, 0, 0, 0, 0, 0, UINTPTR_MAX, 0};
 
 struct metadata {
     unsigned long long payload_size;
-}; // < header size
+    bool freed;
+    uintptr_t payload_ptr;
 
-const int header_size = 16; // bytes
+}; // sizeof(metadata) < header_size
+
+const int header_size = 32; // bytes
 
 /// m61_malloc(sz, file, line)
 ///    Return a pointer to `sz` bytes of newly-allocated dynamic memory.
@@ -53,6 +56,8 @@ void* m61_malloc(size_t sz, const char* file, long line) {
 
         // write to pointer metadata
         meta_ptr->payload_size = sz;
+        meta_ptr->freed = false;
+        meta_ptr->payload_ptr = (uintptr_t)payload_ptr;
     }
     else
     {
@@ -73,13 +78,28 @@ void* m61_malloc(size_t sz, const char* file, long line) {
 void m61_free(void* ptr, const char* file, long line) {
     (void) file, (void) line;   // avoid uninitialized variable warnings
     // get pointer to metadata
-    if (!ptr) return;
-    metadata* meta =(metadata*)((char*)ptr - header_size);
+    if (!ptr) return; // return if ptr = nullptr
+    if ((uintptr_t)ptr < gstats.heap_min || (uintptr_t)ptr > gstats.heap_max){
+        fprintf(stderr, "MEMORY BUG: %s:%ld: invalid free of pointer %p, not in heap\n", file, line, ptr);
+        abort();
+        // MEMORY BUG: test024.cc:8: invalid free of pointer 0xffffffffffffffe0, not in heap
+    }
+    metadata* meta = (metadata*)((char*)ptr - header_size);
+    if (meta->freed){
+        fprintf(stderr, "MEMORY BUG: %s:%ld: invalid free of pointer %p, double free\n", file, line, ptr);
+        abort();
+        // MEMORY BUG???: invalid free of pointer ??ptr??, double free
+    }
+    if(meta->payload_ptr != (uintptr_t)ptr){
+        fprintf(stderr, "MEMORY BUG: %s:%ld: invalid free of pointer %p, not allocated\n", file, line, ptr);
+        abort();
+    }
     if (meta)
     {
         // modify m61 stats
         --gstats.nactive;
         gstats.active_size -= meta->payload_size;
+        meta->freed = true;
     }
     
     base_free(meta);
