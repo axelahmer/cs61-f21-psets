@@ -6,7 +6,6 @@
 #include <cinttypes>
 #include <cassert>
 #include <iostream>
-
 #include <unordered_set>
 
 
@@ -16,11 +15,12 @@ std::unordered_set<uintptr_t> alloc_ptrs;
 struct metadata {
     unsigned long long payload_size;
     bool freed;
-    //uintptr_t payload_ptr;
+    const char* file;
+    long line;
 
 }; // sizeof(metadata) < header_size
 
-const int header_size = 16; // bytes
+const int header_size = 64; // bytes
 const int end_padding = sizeof(size_t);  // bytes
 
 /// m61_malloc(sz, file, line)
@@ -60,6 +60,8 @@ void* m61_malloc(size_t sz, const char* file, long line) {
         // write to pointer metadata
         meta_ptr->payload_size = sz;
         meta_ptr->freed = false;
+        meta_ptr->file = file;
+        meta_ptr->line = line;
 
         // add ptr to alloc ptr set
         alloc_ptrs.insert((uintptr_t)payload_ptr);
@@ -91,13 +93,11 @@ void m61_free(void* ptr, const char* file, long line) {
     if ((uintptr_t)ptr < gstats.heap_min || (uintptr_t)ptr > gstats.heap_max){
         fprintf(stderr, "MEMORY BUG: %s:%ld: invalid free of pointer %p, not in heap\n", file, line, ptr);
         abort();
-        // MEMORY BUG: test024.cc:8: invalid free of pointer 0xffffffffffffffe0, not in heap
     }
     metadata* meta = (metadata*)((char*)ptr - header_size);
     if (meta->freed){
         fprintf(stderr, "MEMORY BUG: %s:%ld: invalid free of pointer %p, double free\n", file, line, ptr);
         abort();
-        // MEMORY BUG???: invalid free of pointer ??ptr??, double free
     }
     if(alloc_ptrs.find((uintptr_t)ptr) == alloc_ptrs.end()){
     // if(meta->payload_ptr != (uintptr_t)ptr){
@@ -174,7 +174,11 @@ void m61_print_statistics() {
 ///    memory.
 
 void m61_print_leak_report() {
-    // Your code here.
+    for ( auto it = alloc_ptrs.cbegin(); it != alloc_ptrs.cend(); ++it ){
+        metadata* meta = (metadata*)((char*)*it - header_size);
+        fprintf(stdout, "LEAK CHECK: %s:%ld: allocated object %p with size %lld\n",
+        meta->file, meta->line, (char*)*it, meta->payload_size);
+    }
 }
 
 
