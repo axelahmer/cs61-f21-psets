@@ -7,18 +7,21 @@
 #include <cassert>
 #include <iostream>
 
+#include <unordered_set>
 
 
 static m61_statistics gstats = {0, 0, 0, 0, 0, 0, UINTPTR_MAX, 0};
+std::unordered_set<uintptr_t> alloc_ptrs;
 
 struct metadata {
     unsigned long long payload_size;
     bool freed;
-    uintptr_t payload_ptr;
+    //uintptr_t payload_ptr;
 
 }; // sizeof(metadata) < header_size
 
-const int header_size = 32; // bytes
+const int header_size = 16; // bytes
+const int end_padding = sizeof(size_t);  // bytes
 
 /// m61_malloc(sz, file, line)
 ///    Return a pointer to `sz` bytes of newly-allocated dynamic memory.
@@ -32,11 +35,11 @@ void* m61_malloc(size_t sz, const char* file, long line) {
     metadata* meta_ptr = nullptr;
     void* payload_ptr;
 
-    size_t total_sz = header_size + sz;
+    size_t cum_sz = header_size + sz + end_padding;
 
-    // check for int overflow and malloc
-    if (total_sz >= sz){
-        meta_ptr = (metadata*)base_malloc(total_sz);
+    // check for int overflow -> if none then malloc
+    if (cum_sz >= sz){
+        meta_ptr = (metadata*)base_malloc(cum_sz);
     }
     
     if (meta_ptr) // if not null pointer
@@ -51,13 +54,19 @@ void* m61_malloc(size_t sz, const char* file, long line) {
         // update min and max heap values
         if((uintptr_t)meta_ptr < gstats.heap_min)
             gstats.heap_min = (uintptr_t)meta_ptr;
-        if((uintptr_t)meta_ptr + total_sz > gstats.heap_max)
-            gstats.heap_max = (uintptr_t)meta_ptr + total_sz;
+        if((uintptr_t)meta_ptr + cum_sz > gstats.heap_max)
+            gstats.heap_max = (uintptr_t)meta_ptr + cum_sz;
 
         // write to pointer metadata
         meta_ptr->payload_size = sz;
         meta_ptr->freed = false;
-        meta_ptr->payload_ptr = (uintptr_t)payload_ptr;
+
+        // add ptr to alloc ptr set
+        alloc_ptrs.insert((uintptr_t)payload_ptr);
+        //meta_ptr->payload_ptr = (uintptr_t)payload_ptr;
+
+        // write end padding as zeros
+        *(size_t*)((char*)payload_ptr+sz) = SIZE_MAX;
     }
     else
     {
@@ -90,8 +99,13 @@ void m61_free(void* ptr, const char* file, long line) {
         abort();
         // MEMORY BUG???: invalid free of pointer ??ptr??, double free
     }
-    if(meta->payload_ptr != (uintptr_t)ptr){
+    if(alloc_ptrs.find((uintptr_t)ptr) == alloc_ptrs.end()){
+    // if(meta->payload_ptr != (uintptr_t)ptr){
         fprintf(stderr, "MEMORY BUG: %s:%ld: invalid free of pointer %p, not allocated\n", file, line, ptr);
+        abort();
+    }
+    if(*(size_t*)((char*)ptr+(uintptr_t)meta->payload_size) != SIZE_MAX){
+        fprintf(stderr, "MEMORY BUG: %s:%ld: detected wild write during free of pointer %p\n", file, line, ptr);
         abort();
     }
     if (meta)
@@ -100,6 +114,7 @@ void m61_free(void* ptr, const char* file, long line) {
         --gstats.nactive;
         gstats.active_size -= meta->payload_size;
         meta->freed = true;
+        alloc_ptrs.erase((uintptr_t)ptr);
     }
     
     base_free(meta);

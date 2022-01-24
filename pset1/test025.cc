@@ -6,7 +6,7 @@
 
 int main() {
     char* ptr = (char*) malloc(32);
-    free(ptr - 64); // changed from 32
+    free(ptr - 32); // changed from 32
     m61_print_statistics();
 }
 
